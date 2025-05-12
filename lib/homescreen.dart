@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:task_manager_app/model/categories.dart';
 import 'package:task_manager_app/model/taskprovider.dart';
 import 'package:task_manager_app/model/categoriesprovider.dart';
 import 'package:task_manager_app/model/task.dart';
@@ -13,13 +14,13 @@ class Homescreen extends StatefulWidget {
 }
 
 class _HomescreenState extends State<Homescreen> {
-  late Future<void> _taskFuture;
-  late Future<void> _categoryFuture;
+  late Future<void> _combinedFuture;
   @override
   void initState() {
     super.initState();
-    _taskFuture = Provider.of<TaskProvider>(context, listen: false).getPost();
-    _categoryFuture = Provider.of<CategoriesProvider>(context, listen: false).getCategories();
+    final taskFuture = Provider.of<TaskProvider>(context, listen: false).getPost();
+    final categoryFuture = Provider.of<CategoriesProvider>(context, listen: false).getCategories();
+    _combinedFuture = Future.wait([taskFuture, categoryFuture]);
 
   }
 
@@ -74,7 +75,7 @@ class _HomescreenState extends State<Homescreen> {
 
   Widget _buildTaskList() {
     return FutureBuilder(
-      future: _taskFuture,
+      future: _combinedFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -88,6 +89,7 @@ class _HomescreenState extends State<Homescreen> {
         }
 
         final tasks = Provider.of<TaskProvider>(context).tasks;
+        final categories = Provider.of<CategoriesProvider>(context).categories;
 
         if (tasks.isEmpty) {
           return const Center(
@@ -102,46 +104,60 @@ class _HomescreenState extends State<Homescreen> {
           itemCount: tasks.length,
           itemBuilder: (context, index) {
             final task = tasks[index];
+            final category = categories.firstWhere(
+            (cat) => cat.id == task.id,
+            orElse: () => Category(id: '', name: 'Unknown'),
+          );
             return Card(
               elevation: 3,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               color: task.isCompleted ? Colors.green[300] : const Color(0xFF2F3C5E),
               margin: const EdgeInsets.symmetric(vertical: 8),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                title: Text(
-                  task.title,
-                  style: TextStyle(
-                    color: Colors.white,
-                    decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                    fontWeight: FontWeight.bold,
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  title: Text(
+                    task.title,
+                    style: TextStyle(
+                      color: Colors.white,
+                      decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.description ?? "Leave a note",
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Category: ${category.name}",
+                        style: const TextStyle(color: Colors.orangeAccent, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ),
+                  trailing: Checkbox(
+                    value: task.isCompleted,
+                    activeColor: const Color.fromARGB(255, 238, 101, 101),
+                    checkColor: const Color.fromARGB(255, 255, 255, 255),
+                    onChanged: (value) {
+                      Provider.of<TaskProvider>(context, listen: false).toggleTaskCompleted(task);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(value! ? 'Task marked completed' : 'Task marked incomplete'),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                subtitle: Text(
-                  task.description ?? "Leave a note",
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                leading: Checkbox(
-                  value: task.isCompleted,
-                  activeColor: Color.fromARGB(255, 238, 101, 101),
-                  checkColor: Color.fromARGB(255, 255, 255, 255),
-                  onChanged: (value) {
-                    Provider.of<TaskProvider>(context, listen: false).toggleTaskCompleted(task);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(value! ? 'Task marked completed' : 'Task marked incomplete'),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                ),
-              ),
+
             );
           },
         );
       },
     );
-
   }
   BottomAppBar _buildBottomNavigationBar() {
     return BottomAppBar(
@@ -267,9 +283,12 @@ class _HomescreenState extends State<Homescreen> {
   }
 
   void _showUpdateTaskDialog(BuildContext context, Task task) {
+
+    final categories = Provider.of<CategoriesProvider>(context).categories;
+    final category = categories.firstWhere((cat) => cat.id == task.id);
     final titleController = TextEditingController(text: task.title);
     final descriptionController = TextEditingController(text: task.description);
-    //final categoryController = TextEditingController(text: task.categoryId);
+    final categoryController = TextEditingController(text:category.name);
     DateTime selectedDateTime = task.dateTime;
 
     showDialog(
@@ -290,10 +309,10 @@ class _HomescreenState extends State<Homescreen> {
                   controller: descriptionController,
                   decoration: const InputDecoration(hintText: 'Task Description'),
                 ),
-                // TextField(
-                //   controller: categoryController,
-                //   decoration: const InputDecoration(hintText: 'Task Category'),
-                // ),
+                TextField(
+                  controller: categoryController,
+                  decoration: const InputDecoration(hintText: 'Task Category'),
+                ),
 
                 const SizedBox(height: 10),
                 Row(
